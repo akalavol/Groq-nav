@@ -22,6 +22,33 @@ document.querySelectorAll('input[name="provider"]').forEach((radio) => {
   });
 });
 
+// --- Local server kind (Ollama / vLLM / autre) : calcule l'URL complète ---
+const LOCAL_KIND_DEFAULTS = {
+  ollama: { port: '11434', modelHint: 'ex: qwen2.5-coder:32b (voir "ollama list")' },
+  vllm: { port: '8000', modelHint: 'ex: Qwen/Qwen2.5-Coder-32B-Instruct (nom servi par vLLM)' },
+  custom: { port: '', modelHint: 'nom du modèle exposé par ton API' },
+};
+
+function recomputeLocalUrl() {
+  const kind = el('local-kind').value;
+  const host = el('local-host').value.trim();
+  if (kind === 'custom' || !host) return;
+  const cleanHost = host.replace(/\/+$/, '');
+  el('local-base-url').value = `${cleanHost}/v1/chat/completions`;
+}
+
+el('local-kind').addEventListener('change', () => {
+  const kind = el('local-kind').value;
+  const defaults = LOCAL_KIND_DEFAULTS[kind];
+  el('local-model').placeholder = defaults.modelHint;
+  if (kind !== 'custom' && !el('local-host').value.trim()) {
+    el('local-host').placeholder = `http://192.168.1.50:${defaults.port}`;
+  }
+  recomputeLocalUrl();
+});
+
+el('local-host').addEventListener('input', recomputeLocalUrl);
+
 async function loadConfig() {
   try {
     const res = await fetch('/api/config');

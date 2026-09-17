@@ -26,9 +26,23 @@ Ouvre ensuite `http://localhost:3000`.
 ## Utilisation
 
 1. Choisis le fournisseur : **Groq** (cloud, nécessite une clé API sur
-   https://console.groq.com/keys) ou **API locale** (l'URL complète d'un
-   endpoint compatible `chat/completions`, par ex. Ollama ou LM Studio
-   tournant sur un PC fixe du réseau local).
+   https://console.groq.com/keys) ou **API locale** — Ollama ou vLLM
+   tournant sur un PC fixe du réseau local, tous deux exposant un endpoint
+   `chat/completions` compatible OpenAI. Sélectionne le type de serveur,
+   renseigne juste l'hôte (`http://IP:PORT`), l'URL complète est calculée
+   automatiquement.
+
+   - **Ollama** : lance `ollama serve` sur le PC fixe (port par défaut
+     `11434`), et `ollama pull <modele>` pour récupérer un modèle. L'API
+     OpenAI-compatible d'Ollama est servie sur `/v1/chat/completions` sans
+     authentification par défaut.
+   - **vLLM** : lance par exemple
+     `vllm serve <modele> --host 0.0.0.0 --port 8000`
+     (ajoute `--api-key <clé>` si tu veux protéger l'accès). Le serveur
+     expose aussi `/v1/chat/completions`.
+
+   Dans les deux cas, si le PC fixe n'est pas sur `localhost`, assure-toi
+   que le pare-feu autorise le port depuis la machine qui exécute Groq Nav.
 2. (Optionnel) envoie des fichiers existants comme contexte — ils sont lus
    côté serveur et injectés dans le prompt envoyé au modèle (fichiers texte
    uniquement, 200 Ko max par fichier, 20 fichiers max).

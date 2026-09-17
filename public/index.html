@@ -30,14 +30,24 @@
     </div>
 
     <div id="local-fields" class="provider-fields hidden">
-      <label>URL de l'endpoint chat/completions
+      <label>Serveur
+        <select id="local-kind">
+          <option value="ollama">Ollama</option>
+          <option value="vllm">vLLM</option>
+          <option value="custom">Autre (compatible OpenAI)</option>
+        </select>
+      </label>
+      <label>Hôte (IP ou nom du PC fixe + port)
+        <input type="text" id="local-host" placeholder="http://192.168.1.50:11434" />
+      </label>
+      <label>URL complète de l'endpoint (calculée automatiquement, modifiable)
         <input type="text" id="local-base-url" placeholder="http://192.168.1.50:11434/v1/chat/completions" />
       </label>
-      <label>Clé API (optionnelle)
+      <label>Clé API (optionnelle — vLLM peut être lancé avec --api-key, Ollama n'en demande pas par défaut)
         <input type="password" id="local-api-key" />
       </label>
       <label>Modèle
-        <input type="text" id="local-model" placeholder="nom-du-modele" />
+        <input type="text" id="local-model" placeholder="ex: qwen2.5-coder:32b (Ollama) ou Qwen/Qwen2.5-Coder-32B-Instruct (vLLM)" />
       </label>
     </div>
   </section>
