@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Groq Nav</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header>
+  <h1>Groq Nav</h1>
+  <p class="subtitle">Navigateur de programmation — génère du code via Groq ou une API locale, écrit-le dans ton dossier, versionne-le avec git.</p>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>1. Fournisseur d'IA</h2>
+    <div class="row">
+      <label><input type="radio" name="provider" value="groq" checked /> Groq (cloud)</label>
+      <label><input type="radio" name="provider" value="local" /> API locale (PC fixe)</label>
+    </div>
+
+    <div id="groq-fields" class="provider-fields">
+      <label>Clé API Groq (laisser vide pour utiliser celle du serveur si configurée)
+        <input type="password" id="groq-api-key" placeholder="gsk_..." />
+      </label>
+      <label>Modèle
+        <input type="text" id="groq-model" placeholder="llama-3.3-70b-versatile" />
+      </label>
+    </div>
+
+    <div id="local-fields" class="provider-fields hidden">
+      <label>Serveur
+        <select id="local-kind">
+          <option value="ollama">Ollama</option>
+          <option value="vllm">vLLM</option>
+          <option value="custom">Autre (compatible OpenAI)</option>
+        </select>
+      </label>
+      <label>Hôte (IP ou nom du PC fixe + port)
+        <input type="text" id="local-host" placeholder="http://192.168.1.50:11434" />
+      </label>
+      <label>URL complète de l'endpoint (calculée automatiquement, modifiable)
+        <input type="text" id="local-base-url" placeholder="http://192.168.1.50:11434/v1/chat/completions" />
+      </label>
+      <label>Clé API (optionnelle — vLLM peut être lancé avec --api-key, Ollama n'en demande pas par défaut)
+        <input type="password" id="local-api-key" />
+      </label>
+      <label>Modèle
+        <input type="text" id="local-model" placeholder="ex: qwen2.5-coder:32b (Ollama) ou Qwen/Qwen2.5-Coder-32B-Instruct (vLLM)" />
+      </label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>2. Fichiers de contexte (optionnel)</h2>
+    <input type="file" id="file-input" multiple />
+    <ul id="file-list" class="file-list"></ul>
+  </section>
+
+  <section class="panel">
+    <h2>3. Ta demande</h2>
+    <textarea id="prompt" rows="8" placeholder="Décris le code que tu veux générer ou modifier..."></textarea>
+    <button id="generate-btn">Générer</button>
+    <div id="generate-status" class="status"></div>
+  </section>
+
+  <section class="panel">
+    <h2>4. Résultat</h2>
+    <details id="raw-details">
+      <summary>Réponse brute du modèle</summary>
+      <pre id="raw-output"></pre>
+    </details>
+    <div id="generated-files"></div>
+  </section>
+
+  <section class="panel">
+    <h2>5. Dossier de travail final</h2>
+    <div class="row">
+      <input type="text" id="folder-path" placeholder="/chemin/vers/mon-projet" />
+      <button id="folder-browse-btn">Parcourir</button>
+      <button id="folder-select-btn">Utiliser ce dossier</button>
+    </div>
+    <div id="browser" class="browser hidden">
+      <div class="row">
+        <button id="browser-up">⬆ Parent</button>
+        <span id="browser-current"></span>
+      </div>
+      <ul id="browser-list" class="browser-list"></ul>
+    </div>
+    <div id="folder-status" class="status"></div>
+    <button id="save-btn" disabled>Enregistrer les fichiers sélectionnés dans ce dossier</button>
+    <div id="save-status" class="status"></div>
+  </section>
+
+  <section class="panel">
+    <h2>6. Git</h2>
+    <div class="row">
+      <button id="git-init-btn">Initialiser git</button>
+      <input type="text" id="git-message" placeholder="Message de commit" />
+      <button id="git-commit-btn">Commit</button>
+    </div>
+    <div id="git-status" class="status"></div>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
