@@ -164,3 +164,17 @@ pre {
   cursor: pointer;
   font-weight: 600;
 }
+
+.panel-danger {
+  border-color: #7c2d12;
+}
+
+.warning {
+  background: #2a1509;
+  border: 1px solid #7c2d12;
+  color: #fdba74;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 0.88rem;
+  margin-top: 0;
+}

@@ -102,6 +102,28 @@
     </div>
     <div id="git-status" class="status"></div>
   </section>
+
+  <section class="panel panel-danger">
+    <h2>7. Exécution du code</h2>
+    <p class="warning">
+      ⚠️ Cette commande s'exécute avec les droits de l'utilisateur qui fait
+      tourner Groq Nav, directement sur cette machine, sans sandbox ni
+      conteneur. Le code peut être généré par une IA : relis-le avant de
+      l'exécuter. N'utilise pas cette fonctionnalité sur une machine que tu
+      ne peux pas te permettre de compromettre.
+    </p>
+    <div class="row">
+      <input type="text" id="run-command" placeholder="ex: python3 src/hello.py" />
+      <button id="run-btn">Exécuter</button>
+    </div>
+    <div class="row">
+      <label>Timeout (secondes)
+        <input type="text" id="run-timeout" value="30" style="width:60px" />
+      </label>
+    </div>
+    <div id="run-status" class="status"></div>
+    <pre id="run-output" class="hidden"></pre>
+  </section>
 </main>
 
 <script src="app.js"></script>

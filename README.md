@@ -53,6 +53,35 @@ Ouvre ensuite `http://localhost:3000`.
    le navigateur de dossiers intégré, puis clique sur "Utiliser ce dossier".
 5. Sélectionne les fichiers générés à garder et clique sur "Enregistrer".
 6. Initialise git et commit depuis la section correspondante.
+7. (Optionnel, à tes risques) exécute le code depuis la section 7 — voir
+   l'avertissement ci-dessous avant de t'en servir.
+
+## ⚠️ Exécution de code — lis ça avant de cliquer sur "Exécuter"
+
+La section 7 de l'interface exécute une commande shell **arbitraire**, dans
+le dossier de travail choisi, avec les droits de l'utilisateur qui fait
+tourner `node server.js`. Ce n'est **pas un bac à sable** : pas de
+conteneur, pas de VM, pas de restriction réseau ou de permissions
+système. Le code exécuté peut avoir été entièrement généré par une IA que
+tu n'as pas relue.
+
+Concrètement :
+
+- N'utilise cette fonctionnalité que sur une machine (ou VM/conteneur
+  jetable) que tu es prêt à voir compromise si le code généré est
+  malveillant ou simplement buggé (suppression de fichiers, appels
+  réseau, consommation de ressources, etc.).
+- Relis le code avant de l'exécuter, surtout s'il a été généré par un
+  modèle que tu ne contrôles pas.
+- Un timeout (30 s par défaut, 120 s max) tue le processus s'il ne
+  s'arrête pas seul, mais ça ne protège ni tes fichiers ni ton réseau
+  pendant qu'il tourne.
+- L'exécution n'est **jamais automatique** : il faut choisir un dossier,
+  taper/valider une commande, et confirmer une pop-up avant que quoi que
+  ce soit ne s'exécute.
+
+Si tu veux une isolation réelle, lance Groq Nav lui-même dans un conteneur
+ou une VM dédiée plutôt que directement sur ta machine principale.
 
 ## Limites connues
 

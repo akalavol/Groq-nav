@@ -4,6 +4,7 @@ import multer from 'multer';
 import os from 'node:os';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import simpleGit from 'simple-git';
 
 import { generate } from './lib/providers.js';
@@ -17,6 +18,9 @@ await fs.mkdir(UPLOAD_ROOT, { recursive: true });
 
 const MAX_CONTEXT_FILE_BYTES = 200 * 1024;
 const MAX_UPLOAD_FILES = 20;
+const MAX_RUN_OUTPUT_BYTES = 200 * 1024;
+const DEFAULT_RUN_TIMEOUT_MS = 30_000;
+const MAX_RUN_TIMEOUT_MS = 120_000;
 
 const upload = multer({
   dest: UPLOAD_ROOT,
@@ -211,6 +215,92 @@ app.get('/api/git/status', async (req, res) => {
     if (!isRepo) return res.json({ isRepo: false });
     const status = await git.status();
     res.json({ isRepo: true, status });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// --- Exécution du code généré ---
+// ATTENTION: exécute une commande shell arbitraire avec les droits de
+// l'utilisateur qui fait tourner ce serveur, dans le dossier de travail
+// choisi. Aucun sandboxing (pas de conteneur/VM). Ce n'est déclenché que
+// par une action explicite de l'utilisateur, jamais automatiquement après
+// une génération. Voir README pour l'avertissement complet.
+app.post('/api/run', async (req, res) => {
+  try {
+    const { folder, command, timeoutMs } = req.body || {};
+    if (!folder || typeof command !== 'string' || !command.trim()) {
+      return res.status(400).json({ error: 'folder et command sont requis.' });
+    }
+    const root = path.resolve(String(folder));
+    const stat = await fs.stat(root).catch(() => null);
+    if (!stat || !stat.isDirectory()) {
+      return res.status(400).json({ error: 'Le dossier de travail est invalide.' });
+    }
+
+    const effectiveTimeout = Math.min(
+      Number(timeoutMs) > 0 ? Number(timeoutMs) : DEFAULT_RUN_TIMEOUT_MS,
+      MAX_RUN_TIMEOUT_MS,
+    );
+
+    const startedAt = Date.now();
+    // detached:true place la commande dans son propre groupe de processus.
+    // C'est nécessaire pour pouvoir tuer aussi ses éventuels enfants
+    // (ex: "sleep 5 && x", "npm start" qui lance node, etc.) : l'option
+    // native `timeout` de spawn() ne tue que le shell lui-même et laisse
+    // les sous-processus tourner, ce qui rend le timeout inefficace.
+    const child = spawn(command, {
+      cwd: root,
+      shell: true,
+      detached: true,
+      env: process.env,
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let truncated = false;
+    let timedOut = false;
+
+    const collect = (buf, chunk) => {
+      if (buf.length >= MAX_RUN_OUTPUT_BYTES) {
+        truncated = true;
+        return buf;
+      }
+      return buf + chunk.toString('utf8');
+    };
+
+    child.stdout.on('data', (chunk) => { stdout = collect(stdout, chunk); });
+    child.stderr.on('data', (chunk) => { stderr = collect(stderr, chunk); });
+
+    const killGroup = (signal) => {
+      try { process.kill(-child.pid, signal); } catch { /* déjà terminé */ }
+    };
+
+    const timeoutTimer = setTimeout(() => {
+      timedOut = true;
+      killGroup('SIGTERM');
+      setTimeout(() => killGroup('SIGKILL'), 2000).unref();
+    }, effectiveTimeout);
+    timeoutTimer.unref();
+
+    child.on('error', (err) => {
+      clearTimeout(timeoutTimer);
+      res.status(400).json({ error: `Impossible de lancer la commande: ${err.message}` });
+    });
+
+    child.on('close', (code, signal) => {
+      clearTimeout(timeoutTimer);
+      if (res.headersSent) return;
+      res.json({
+        exitCode: code,
+        signal,
+        timedOut,
+        durationMs: Date.now() - startedAt,
+        stdout,
+        stderr,
+        truncated,
+      });
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

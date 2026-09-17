@@ -168,6 +168,8 @@ function renderGeneratedFiles() {
     return;
   }
 
+  suggestRunCommand();
+
   state.generatedFiles.forEach((f, idx) => {
     const details = document.createElement('details');
     details.className = 'file-card';
@@ -186,6 +188,28 @@ function renderGeneratedFiles() {
     container.appendChild(details);
   });
   el('save-btn').disabled = !state.selectedFolder;
+}
+
+function suggestRunCommand() {
+  const input = el('run-command');
+  if (input.value.trim()) return; // ne pas écraser une commande déjà tapée par l'utilisateur
+
+  const paths = state.generatedFiles.map((f) => f.path);
+  if (paths.includes('package.json')) {
+    input.value = 'npm install && npm start';
+    return;
+  }
+  const pyFiles = paths.filter((p) => p.endsWith('.py'));
+  if (pyFiles.length === 1) {
+    input.value = `python3 ${pyFiles[0]}`;
+    return;
+  }
+  const jsFiles = paths.filter((p) => p.endsWith('.js') || p.endsWith('.mjs'));
+  if (jsFiles.length === 1) {
+    input.value = `node ${jsFiles[0]}`;
+    return;
+  }
+  // Plusieurs fichiers ou langage non reconnu : on laisse l'utilisateur taper la commande.
 }
 
 // --- Navigation de dossier ---
@@ -296,5 +320,54 @@ el('git-commit-btn').addEventListener('click', async () => {
     setStatus('git-status', data.committed ? 'Commit effectué.' : (data.reason || 'Rien à committer.'), data.committed ? 'ok' : '');
   } catch (err) {
     setStatus('git-status', 'Erreur: ' + err.message, 'err');
+  }
+});
+
+// --- Exécution ---
+el('run-btn').addEventListener('click', async () => {
+  if (!state.selectedFolder) {
+    setStatus('run-status', 'Choisis d\'abord un dossier de travail (section 5).', 'err');
+    return;
+  }
+  const command = el('run-command').value.trim();
+  if (!command) {
+    setStatus('run-status', 'Indique une commande à exécuter.', 'err');
+    return;
+  }
+  if (!confirm(`Exécuter cette commande dans ${state.selectedFolder} ?\n\n${command}\n\nCe code peut avoir été généré par une IA et s'exécute sans sandbox sur cette machine.`)) {
+    return;
+  }
+
+  const timeoutSec = Number(el('run-timeout').value) || 30;
+  el('run-btn').disabled = true;
+  el('run-output').classList.add('hidden');
+  setStatus('run-status', 'Exécution en cours...', '');
+  try {
+    const res = await fetch('/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folder: state.selectedFolder, command, timeoutMs: timeoutSec * 1000 }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+
+    const out = el('run-output');
+    out.classList.remove('hidden');
+    out.textContent =
+      `$ ${command}\n(code de sortie: ${data.exitCode}${data.signal ? `, signal: ${data.signal}` : ''}, durée: ${data.durationMs} ms)\n\n` +
+      `--- stdout ---\n${data.stdout || '(vide)'}\n\n--- stderr ---\n${data.stderr || '(vide)'}` +
+      (data.truncated ? '\n\n[sortie tronquée]' : '');
+
+    if (data.timedOut) {
+      setStatus('run-status', 'Processus tué après dépassement du timeout.', 'err');
+    } else if (data.exitCode === 0) {
+      setStatus('run-status', 'Terminé avec succès.', 'ok');
+    } else {
+      setStatus('run-status', `Terminé avec le code ${data.exitCode}.`, 'err');
+    }
+  } catch (err) {
+    setStatus('run-status', 'Erreur: ' + err.message, 'err');
+  } finally {
+    el('run-btn').disabled = false;
   }
 });
