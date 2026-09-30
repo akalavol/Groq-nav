@@ -1,6 +1,6 @@
 @echo off
 rem Installe tout ce qu'il faut pour lancer Groq Nav sous Windows :
-rem Node.js (>= 18, fournit npm), Git, les dependances npm et le fichier .env.
+rem Node.js (>= 20.16, fournit npm), Git, les dependances npm et le fichier .env.
 rem Double-clic dessus, ou lance "install.cmd" dans une invite de commandes.
 rem Pas de blocs entre parentheses volontairement : un PATH contenant
 rem "Program Files (x86)" casse l'analyse des blocs if (...) de cmd.
@@ -27,7 +27,7 @@ where node >nul 2>nul
 if errorlevel 1 goto node_restart
 
 :node_found
-node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 18 ? 0 : 1)"
+node -e "const [a,b]=process.versions.node.split('.').map(Number);process.exit(a>20||(a===20&&b>=16)?0:1)"
 if errorlevel 1 goto node_too_old
 for /f "delims=" %%v in ('node -v') do echo [OK] Node.js %%v
 where npm >nul 2>nul
@@ -106,7 +106,7 @@ echo      Ferme cette fenetre et relance install.cmd.
 goto fail
 
 :node_too_old
-for /f "delims=" %%v in ('node -v') do echo [XX] Node.js %%v est trop ancien, il faut la version 18 ou plus.
+for /f "delims=" %%v in ('node -v') do echo [XX] Node.js %%v est trop ancien, il faut la version 20.16 ou plus.
 echo      Mets-le a jour : winget upgrade OpenJS.NodeJS.LTS  (ou https://nodejs.org)
 goto fail
 
