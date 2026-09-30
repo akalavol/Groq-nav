@@ -19,7 +19,7 @@ et à `git`.
 Double-clique sur **`install.cmd`**. Le script :
 
 1. installe Node.js LTS (qui fournit `npm`) via `winget` s'il est absent ou
-   plus vieux que la v18 — c'est la cause de l'erreur
+   plus vieux que la v20.16 — c'est la cause de l'erreur
    « npm n'est pas reconnu en tant que commande interne » ;
 2. installe Git s'il manque (nécessaire pour la section git) ;
 3. lance `npm ci` pour installer les dépendances ;
@@ -66,8 +66,8 @@ Ouvre ensuite `http://localhost:3000`.
    Dans les deux cas, si le PC fixe n'est pas sur `localhost`, assure-toi
    que le pare-feu autorise le port depuis la machine qui exécute Groq Nav.
 2. (Optionnel) envoie des fichiers existants comme contexte — ils sont lus
-   côté serveur et injectés dans le prompt envoyé au modèle (fichiers texte
-   uniquement, 200 Ko max par fichier, 20 fichiers max).
+   côté serveur et injectés dans le prompt envoyé au modèle (texte/code
+   200 Ko max, PDF et Word `.docx` 20 Mo max, 20 fichiers max).
 3. Écris ta demande et clique sur "Générer". Le modèle est instruit pour
    produire ses fichiers dans un format structuré (`===FILE: chemin===` /
    `===ENDFILE===`) que l'appli parse automatiquement.
@@ -77,6 +77,29 @@ Ouvre ensuite `http://localhost:3000`.
 6. Initialise git et commit depuis la section correspondante.
 7. (Optionnel, à tes risques) exécute le code depuis la section 7 — voir
    l'avertissement ci-dessous avant de t'en servir.
+
+## Mode Discussion (documents)
+
+L'onglet **Discussion** en haut de la page remplace les sections code par
+un chat. Le fournisseur (section 1) et les documents (section 2) sont
+partagés entre les deux modes.
+
+- Formats lus : texte, code, CSV, Markdown…, **PDF** (s'il contient du
+  texte) et **Word `.docx`**. Pas de `.doc` (ancien Word) ni d'OCR : un PDF
+  scanné est refusé avec un message explicite.
+- L'historique de la discussion et les documents cochés sont renvoyés au
+  modèle à chaque message (les API chat sont sans mémoire). « Nouvelle
+  discussion » vide l'historique mais garde les documents.
+- **Limite de taille** : au plus `CHAT_MAX_DOC_CHARS` caractères de
+  documents par message (48 000 par défaut ≈ 12 000 tokens), répartis
+  équitablement entre les documents. Au-delà, seul le début est envoyé et
+  l'interface affiche quels documents ont été tronqués : le modèle ne
+  « voit » pas la suite. Pas de découpage/recherche (RAG).
+- **Ollama** : son contexte par défaut est petit (quelques milliers de
+  tokens selon la version) et l'API compatible OpenAI ne permet pas de le
+  changer par requête ; au-delà, Ollama coupe le prompt **sans erreur**.
+  Lance-le avec par exemple `OLLAMA_CONTEXT_LENGTH=16384 ollama serve`,
+  ou baisse `CHAT_MAX_DOC_CHARS` pour qu'il tienne dans le contexte.
 
 ## ⚠️ Exécution de code — lis ça avant de cliquer sur "Exécuter"
 

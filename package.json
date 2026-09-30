@@ -1,20 +1,22 @@
 {
   "name": "groq-nav",
   "version": "0.1.0",
-  "description": "Navigateur de programmation local : prompt vers code via Groq ou une API locale (PC fixe), avec upload de fichiers de contexte, choix du dossier de travail et intégration git.",
+  "description": "Navigateur de programmation local : prompt vers code via Groq ou une API locale (PC fixe), avec upload de fichiers de contexte, choix du dossier de travail et intégration git, et mode discussion avec documents (texte, PDF, Word).",
   "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check lib/providers.js && node --check lib/fileParser.js && node --check public/app.js && node -e \"import('./lib/fileParser.js').then(m=>{const f=m.parseGeneratedFiles('===FILE: a/b.js===\\nx\\n===ENDFILE===\\n===FILE: ../c===\\ny\\n===ENDFILE===');if(f.length!==1||f[0].path!=='a/b.js')throw new Error('parseGeneratedFiles casse');console.log('check OK')})\""
+    "check": "node --check server.js && node --check lib/providers.js && node --check lib/fileParser.js && node --check lib/documents.js && node --check public/app.js && node -e \"import('./lib/fileParser.js').then(m=>{const f=m.parseGeneratedFiles('===FILE: a/b.js===\\nx\\n===ENDFILE===\\n===FILE: ../c===\\ny\\n===ENDFILE===');if(f.length!==1||f[0].path!=='a/b.js')throw new Error('parseGeneratedFiles casse');console.log('check OK')})\""
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.16"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "mammoth": "^1.13.0",
     "multer": "^2.0.0",
+    "pdf-parse": "^2.4.5",
     "simple-git": "^3.25.0"
   }
 }

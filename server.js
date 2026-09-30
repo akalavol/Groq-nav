@@ -8,7 +8,8 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import simpleGit from 'simple-git';
 
-import { generate } from './lib/providers.js';
+import { generate, chat } from './lib/providers.js';
+import { extractDocumentText } from './lib/documents.js';
 import { parseGeneratedFiles } from './lib/fileParser.js';
 
 // Chemins résolus depuis l'emplacement de ce fichier, pas depuis le dossier
@@ -29,6 +30,14 @@ const UPLOAD_ROOT = path.join(os.tmpdir(), 'groq-nav-uploads');
 await fs.mkdir(UPLOAD_ROOT, { recursive: true });
 
 const MAX_CONTEXT_FILE_BYTES = 200 * 1024;
+// Texte extrait d'un PDF/Word : plafond de stockage côté navigateur. La
+// vraie limite envoyée au modèle est CHAT_MAX_DOC_CHARS, appliquée à
+// chaque message de discussion.
+const MAX_EXTRACTED_CHARS = 1_000_000;
+// ~4 caractères par token : 48 000 caractères ≈ 12 000 tokens de
+// documents. À baisser pour un petit modèle local (contexte 8k).
+const CHAT_MAX_DOC_CHARS = Number(process.env.CHAT_MAX_DOC_CHARS) || 48_000;
+const CHAT_MAX_HISTORY_MESSAGES = 40;
 const MAX_UPLOAD_FILES = 20;
 const MAX_RUN_OUTPUT_BYTES = 200 * 1024;
 const DEFAULT_RUN_TIMEOUT_MS = 30_000;
@@ -36,7 +45,7 @@ const MAX_RUN_TIMEOUT_MS = 120_000;
 
 const upload = multer({
   dest: UPLOAD_ROOT,
-  limits: { fileSize: 5 * 1024 * 1024, files: MAX_UPLOAD_FILES },
+  limits: { fileSize: 20 * 1024 * 1024, files: MAX_UPLOAD_FILES },
 });
 
 app.use(express.json({ limit: '10mb' }));
@@ -52,28 +61,76 @@ function isTextLikely(buf) {
   return suspicious / Math.max(sample.length, 1) < 0.05;
 }
 
+// Complète les paramètres du fournisseur avec les valeurs du .env quand
+// l'interface les laisse vides.
+function resolveProvider({ provider, apiKey, baseUrl, model }) {
+  return {
+    provider,
+    apiKey: apiKey || (provider === 'groq' ? process.env.GROQ_API_KEY : process.env.LOCAL_API_KEY) || '',
+    baseUrl: baseUrl || process.env.LOCAL_API_URL || '',
+    model: model || (provider === 'groq' ? process.env.GROQ_DEFAULT_MODEL : process.env.LOCAL_DEFAULT_MODEL) || '',
+  };
+}
+
+// Répartit le budget de caractères équitablement entre les documents :
+// les petits passent en entier, le reste est partagé entre les gros.
+function fitDocumentsToBudget(docs, budget) {
+  const order = docs
+    .map((d, i) => ({ i, len: d.content.length }))
+    .sort((a, b) => a.len - b.len);
+  const allowed = new Array(docs.length);
+  let remaining = budget;
+  order.forEach(({ i, len }, pos) => {
+    const share = Math.floor(remaining / (order.length - pos));
+    allowed[i] = Math.min(len, share);
+    remaining -= allowed[i];
+  });
+  const truncated = [];
+  const fitted = docs.map((d, i) => {
+    if (allowed[i] >= d.content.length) return d;
+    truncated.push(d.name);
+    return {
+      name: d.name,
+      content: `${d.content.slice(0, allowed[i])}\n[... document tronqué : ${allowed[i]} caractères sur ${d.content.length} ...]`,
+    };
+  });
+  return { fitted, truncated };
+}
+
 // --- Génération de code ---
 app.post('/api/generate', async (req, res) => {
   try {
-    const { provider, apiKey, baseUrl, model, prompt, contextFiles } = req.body || {};
+    const { prompt, contextFiles } = req.body || {};
     if (!prompt || typeof prompt !== 'string') {
       return res.status(400).json({ error: 'Le champ "prompt" est requis.' });
     }
 
-    const effectiveApiKey = apiKey || (provider === 'groq' ? process.env.GROQ_API_KEY : process.env.LOCAL_API_KEY) || '';
-    const effectiveBaseUrl = baseUrl || process.env.LOCAL_API_URL || '';
-    const effectiveModel = model || (provider === 'groq' ? process.env.GROQ_DEFAULT_MODEL : process.env.LOCAL_DEFAULT_MODEL) || '';
-
-    const raw = await generate({
-      provider,
-      apiKey: effectiveApiKey,
-      baseUrl: effectiveBaseUrl,
-      model: effectiveModel,
-      prompt,
-      contextFiles,
-    });
+    const raw = await generate({ ...resolveProvider(req.body), prompt, contextFiles });
     const files = parseGeneratedFiles(raw);
     res.json({ raw, files });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// --- Discussion avec documents ---
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { history, documents } = req.body || {};
+    const cleanHistory = (Array.isArray(history) ? history : [])
+      .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+      .slice(-CHAT_MAX_HISTORY_MESSAGES)
+      .map((m) => ({ role: m.role, content: m.content }));
+    if (cleanHistory.length === 0 || cleanHistory[cleanHistory.length - 1].role !== 'user') {
+      return res.status(400).json({ error: 'Le dernier message doit venir de l\'utilisateur.' });
+    }
+
+    const cleanDocs = (Array.isArray(documents) ? documents : [])
+      .filter((d) => d && typeof d.name === 'string' && typeof d.content === 'string');
+    const { fitted, truncated } = fitDocumentsToBudget(cleanDocs, CHAT_MAX_DOC_CHARS);
+
+    const reply = await chat({ ...resolveProvider(req.body), history: cleanHistory, documents: fitted });
+    res.json({ reply, truncatedDocuments: truncated, docCharBudget: CHAT_MAX_DOC_CHARS });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -84,16 +141,46 @@ app.post('/api/upload', upload.array('files', MAX_UPLOAD_FILES), async (req, res
   try {
     const results = [];
     for (const f of req.files || []) {
-      const buf = await fs.readFile(f.path);
-      const text = isTextLikely(buf) ? buf.subarray(0, MAX_CONTEXT_FILE_BYTES).toString('utf8') : null;
-      results.push({
-        name: f.originalname,
-        size: f.size,
-        binary: text === null,
-        content: text,
-        truncated: text !== null && buf.length > MAX_CONTEXT_FILE_BYTES,
-      });
-      await fs.unlink(f.path).catch(() => {});
+      // multer décode le nom en latin1 : "résumé.pdf" arriverait en "rÃ©sumÃ©.pdf".
+      const name = Buffer.from(f.originalname, 'latin1').toString('utf8');
+      try {
+        const buf = await fs.readFile(f.path);
+        let text = null;
+        let truncated = false;
+        let error = null;
+        let extracted = null;
+        try {
+          extracted = await extractDocumentText(buf, name);
+        } catch (err) {
+          error = `Lecture impossible (${err.message}).`;
+        }
+        if (extracted !== null) {
+          text = extracted.trim();
+          if (!text) {
+            error = 'Aucun texte trouvé : document scanné (images) ? Pas d\'OCR.';
+            text = null;
+          } else if (text.length > MAX_EXTRACTED_CHARS) {
+            text = text.slice(0, MAX_EXTRACTED_CHARS);
+            truncated = true;
+          }
+        } else if (!error && isTextLikely(buf)) {
+          text = buf.subarray(0, MAX_CONTEXT_FILE_BYTES).toString('utf8');
+          truncated = buf.length > MAX_CONTEXT_FILE_BYTES;
+        } else if (!error) {
+          error = 'Format binaire non pris en charge (texte, PDF et .docx uniquement).';
+        }
+        results.push({
+          name,
+          size: f.size,
+          binary: text === null,
+          content: text,
+          chars: text ? text.length : 0,
+          truncated,
+          error,
+        });
+      } finally {
+        await fs.unlink(f.path).catch(() => {});
+      }
     }
     res.json({ files: results });
   } catch (err) {
@@ -333,6 +420,7 @@ app.get('/api/config', (req, res) => {
     groqDefaultModel: process.env.GROQ_DEFAULT_MODEL || 'llama-3.3-70b-versatile',
     localApiUrl: process.env.LOCAL_API_URL || '',
     localDefaultModel: process.env.LOCAL_DEFAULT_MODEL || '',
+    chatMaxDocChars: CHAT_MAX_DOC_CHARS,
   });
 });
 

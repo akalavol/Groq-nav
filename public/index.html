@@ -9,7 +9,11 @@
 <body>
 <header>
   <h1>Groq Nav</h1>
-  <p class="subtitle">Navigateur de programmation — génère du code via Groq ou une API locale, écrit-le dans ton dossier, versionne-le avec git.</p>
+  <p class="subtitle">Navigateur de programmation — génère du code via Groq ou une API locale, écrit-le dans ton dossier, versionne-le avec git. Ou discute simplement avec tes documents.</p>
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-mode="code" role="tab" aria-selected="true">Code</button>
+    <button class="tab" data-mode="chat" role="tab" aria-selected="false">Discussion</button>
+  </nav>
 </header>
 
 <main>
@@ -53,19 +57,34 @@
   </section>
 
   <section class="panel">
-    <h2>2. Fichiers de contexte (optionnel)</h2>
+    <h2>2. Documents / fichiers de contexte (optionnel)</h2>
+    <p class="hint">Texte, code, PDF et Word (.docx). Les PDF scannés (images) ne sont pas lisibles : pas d'OCR.</p>
     <input type="file" id="file-input" multiple />
     <ul id="file-list" class="file-list"></ul>
+    <div id="upload-status" class="status"></div>
   </section>
 
-  <section class="panel">
+  <section class="panel mode-chat hidden">
+    <h2>3. Discussion</h2>
+    <div id="chat-log" class="chat-log">
+      <p class="chat-empty">Envoie des documents (section 2) si tu veux, puis pose ta question.</p>
+    </div>
+    <textarea id="chat-input" rows="3" placeholder="Ta question… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)"></textarea>
+    <div class="row">
+      <button id="chat-send-btn">Envoyer</button>
+      <button id="chat-reset-btn" class="secondary">Nouvelle discussion</button>
+    </div>
+    <div id="chat-status" class="status"></div>
+  </section>
+
+  <section class="panel mode-code">
     <h2>3. Ta demande</h2>
     <textarea id="prompt" rows="8" placeholder="Décris le code que tu veux générer ou modifier..."></textarea>
     <button id="generate-btn">Générer</button>
     <div id="generate-status" class="status"></div>
   </section>
 
-  <section class="panel">
+  <section class="panel mode-code">
     <h2>4. Résultat</h2>
     <details id="raw-details">
       <summary>Réponse brute du modèle</summary>
@@ -74,7 +93,7 @@
     <div id="generated-files"></div>
   </section>
 
-  <section class="panel">
+  <section class="panel mode-code">
     <h2>5. Dossier de travail final</h2>
     <div class="row">
       <input type="text" id="folder-path" placeholder="/chemin/vers/mon-projet" />
@@ -93,7 +112,7 @@
     <div id="save-status" class="status"></div>
   </section>
 
-  <section class="panel">
+  <section class="panel mode-code">
     <h2>6. Git</h2>
     <div class="row">
       <button id="git-init-btn">Initialiser git</button>
@@ -103,7 +122,7 @@
     <div id="git-status" class="status"></div>
   </section>
 
-  <section class="panel panel-danger">
+  <section class="panel panel-danger mode-code">
     <h2>7. Exécution du code</h2>
     <p class="warning">
       ⚠️ Cette commande s'exécute avec les droits de l'utilisateur qui fait

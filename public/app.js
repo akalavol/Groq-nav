@@ -1,5 +1,8 @@
 const state = {
   contextFiles: [],
+  rejectedFiles: [],
+  chatHistory: [],
+  chatBusy: false,
   generatedFiles: [],
   selectedFolder: null,
   browsePath: null,
@@ -12,6 +15,20 @@ function setStatus(id, message, kind) {
   node.textContent = message;
   node.className = 'status' + (kind ? ' ' + kind : '');
 }
+
+// --- Onglets Code / Discussion ---
+document.querySelectorAll('.tab').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    const mode = tab.dataset.mode;
+    document.querySelectorAll('.tab').forEach((t) => {
+      t.classList.toggle('active', t === tab);
+      t.setAttribute('aria-selected', String(t === tab));
+    });
+    document.querySelectorAll('.mode-code').forEach((n) => n.classList.toggle('hidden', mode !== 'code'));
+    document.querySelectorAll('.mode-chat').forEach((n) => n.classList.toggle('hidden', mode !== 'chat'));
+    if (mode === 'chat') el('chat-input').focus();
+  });
+});
 
 // --- Provider switch ---
 document.querySelectorAll('input[name="provider"]').forEach((radio) => {
@@ -65,6 +82,26 @@ async function loadConfig() {
 }
 loadConfig();
 
+// Paramètres du fournisseur choisi, communs à la génération et à la discussion.
+function providerPayload() {
+  const provider = document.querySelector('input[name="provider"]:checked').value;
+  if (provider === 'groq') {
+    return { provider, apiKey: el('groq-api-key').value.trim(), model: el('groq-model').value.trim() };
+  }
+  return {
+    provider,
+    baseUrl: el('local-base-url').value.trim(),
+    apiKey: el('local-api-key').value.trim(),
+    model: el('local-model').value.trim(),
+  };
+}
+
+function includedContextFiles() {
+  return state.contextFiles
+    .filter((f) => f.included !== false)
+    .map((f) => ({ name: f.name, content: f.content }));
+}
+
 // --- Upload de fichiers de contexte ---
 el('file-input').addEventListener('change', async (e) => {
   const files = Array.from(e.target.files || []);
@@ -73,17 +110,18 @@ el('file-input').addEventListener('change', async (e) => {
   const formData = new FormData();
   files.forEach((f) => formData.append('files', f));
 
-  setStatus('generate-status', 'Envoi des fichiers...', '');
+  setStatus('upload-status', 'Envoi et lecture des fichiers...', '');
   try {
     const res = await fetch('/api/upload', { method: 'POST', body: formData });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Échec de l\'upload');
 
     state.contextFiles.push(...data.files.filter((f) => !f.binary));
+    state.rejectedFiles = data.files.filter((f) => f.binary);
     renderFileList();
-    setStatus('generate-status', '', '');
+    setStatus('upload-status', '', '');
   } catch (err) {
-    setStatus('generate-status', 'Erreur upload: ' + err.message, 'err');
+    setStatus('upload-status', 'Erreur upload: ' + err.message, 'err');
   }
   e.target.value = '';
 });
@@ -99,10 +137,12 @@ function renderFileList() {
     checkbox.type = 'checkbox';
     checkbox.checked = true;
     checkbox.dataset.idx = idx;
+    if (f.included === undefined) f.included = true;
+    checkbox.checked = f.included;
     checkbox.addEventListener('change', () => { f.included = checkbox.checked; });
-    f.included = true;
     label.appendChild(checkbox);
-    label.append(` ${f.name} (${f.size} o)${f.truncated ? ' [tronqué]' : ''}`);
+    const chars = f.chars || (f.content ? f.content.length : 0);
+    label.append(` ${f.name} (${chars.toLocaleString('fr-FR')} caractères)${f.truncated ? ' [tronqué]' : ''}`);
     li.appendChild(label);
     const removeBtn = document.createElement('button');
     removeBtn.textContent = '✕';
@@ -113,29 +153,23 @@ function renderFileList() {
     li.appendChild(removeBtn);
     list.appendChild(li);
   });
+  state.rejectedFiles.forEach((f) => {
+    const li = document.createElement('li');
+    li.className = 'file-error';
+    li.textContent = `✕ ${f.name} ignoré : ${f.error || 'format non pris en charge.'}`;
+    list.appendChild(li);
+  });
 }
 
 // --- Génération ---
 el('generate-btn').addEventListener('click', async () => {
-  const provider = document.querySelector('input[name="provider"]:checked').value;
   const prompt = el('prompt').value.trim();
   if (!prompt) {
     setStatus('generate-status', 'Écris une demande d\'abord.', 'err');
     return;
   }
 
-  const payload = { provider, prompt };
-  if (provider === 'groq') {
-    payload.apiKey = el('groq-api-key').value.trim();
-    payload.model = el('groq-model').value.trim();
-  } else {
-    payload.baseUrl = el('local-base-url').value.trim();
-    payload.apiKey = el('local-api-key').value.trim();
-    payload.model = el('local-model').value.trim();
-  }
-  payload.contextFiles = state.contextFiles
-    .filter((f) => f.included !== false)
-    .map((f) => ({ name: f.name, content: f.content }));
+  const payload = { ...providerPayload(), prompt, contextFiles: includedContextFiles() };
 
   setStatus('generate-status', 'Génération en cours...', '');
   el('generate-btn').disabled = true;
@@ -157,6 +191,73 @@ el('generate-btn').addEventListener('click', async () => {
   } finally {
     el('generate-btn').disabled = false;
   }
+});
+
+// --- Discussion ---
+function appendChatMessage(role, content) {
+  const log = el('chat-log');
+  log.querySelector('.chat-empty')?.remove();
+  const div = document.createElement('div');
+  div.className = `chat-msg ${role}`;
+  div.textContent = content;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+async function sendChat() {
+  if (state.chatBusy) return;
+  const question = el('chat-input').value.trim();
+  if (!question) return;
+
+  state.chatHistory.push({ role: 'user', content: question });
+  appendChatMessage('user', question);
+  el('chat-input').value = '';
+  state.chatBusy = true;
+  el('chat-send-btn').disabled = true;
+  setStatus('chat-status', 'Réponse en cours...', '');
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...providerPayload(), history: state.chatHistory, documents: includedContextFiles() }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Échec de la discussion');
+
+    state.chatHistory.push({ role: 'assistant', content: data.reply });
+    appendChatMessage('assistant', data.reply);
+    if (data.truncatedDocuments.length > 0) {
+      setStatus('chat-status',
+        `Attention : trop long pour la limite de ${data.docCharBudget.toLocaleString('fr-FR')} caractères, ` +
+        `seul le début de ces documents a été lu : ${data.truncatedDocuments.join(', ')}.`, 'err');
+    } else {
+      setStatus('chat-status', '', '');
+    }
+  } catch (err) {
+    // La question n'a pas eu de réponse : on la retire de l'historique et
+    // on la remet dans la zone de saisie pour pouvoir réessayer.
+    state.chatHistory.pop();
+    el('chat-log').lastElementChild?.remove();
+    el('chat-input').value = question;
+    setStatus('chat-status', 'Erreur: ' + err.message, 'err');
+  } finally {
+    state.chatBusy = false;
+    el('chat-send-btn').disabled = false;
+  }
+}
+
+el('chat-send-btn').addEventListener('click', sendChat);
+el('chat-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    sendChat();
+  }
+});
+el('chat-reset-btn').addEventListener('click', () => {
+  if (state.chatBusy) return;
+  state.chatHistory = [];
+  el('chat-log').innerHTML = '<p class="chat-empty">Nouvelle discussion. Les documents de la section 2 restent attachés.</p>';
+  setStatus('chat-status', '', '');
 });
 
 function renderGeneratedFiles() {
