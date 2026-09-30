@@ -1,17 +1,29 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import express from 'express';
 import multer from 'multer';
 import os from 'node:os';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import simpleGit from 'simple-git';
 
 import { generate } from './lib/providers.js';
 import { parseGeneratedFiles } from './lib/fileParser.js';
 
+// Chemins résolus depuis l'emplacement de ce fichier, pas depuis le dossier
+// courant : sinon lancer "node C:\...\server.js" depuis un autre dossier
+// ne trouve ni le .env ni l'interface.
+const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(APP_DIR, '.env') });
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+// Par défaut on n'écoute que sur la machine locale : /api/run exécute des
+// commandes shell et /api/save écrit sur le disque, les exposer au réseau
+// local reviendrait à donner un shell à n'importe quel voisin de Wi-Fi.
+const HOST = process.env.HOST || '127.0.0.1';
+const IS_WINDOWS = process.platform === 'win32';
 
 const UPLOAD_ROOT = path.join(os.tmpdir(), 'groq-nav-uploads');
 await fs.mkdir(UPLOAD_ROOT, { recursive: true });
@@ -28,7 +40,7 @@ const upload = multer({
 });
 
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static(path.join(process.cwd(), 'public')));
+app.use(express.static(path.join(APP_DIR, 'public')));
 
 function isTextLikely(buf) {
   const sample = buf.subarray(0, 8000);
@@ -193,7 +205,7 @@ app.post('/api/git/commit', async (req, res) => {
 
     await git.add('.');
     const status = await git.status();
-    if (status.staged.length === 0 && status.created.length === 0 && status.modified.length === 0) {
+    if (status.files.length === 0) {
       return res.json({ committed: false, reason: 'Rien à committer.' });
     }
     const commitMessage = message && message.trim() ? message.trim() : 'Génération de code via Groq Nav';
@@ -249,10 +261,13 @@ app.post('/api/run', async (req, res) => {
     // (ex: "sleep 5 && x", "npm start" qui lance node, etc.) : l'option
     // native `timeout` de spawn() ne tue que le shell lui-même et laisse
     // les sous-processus tourner, ce qui rend le timeout inefficace.
+    // Sous Windows, detached ouvrirait une nouvelle console et les PID
+    // négatifs n'existent pas : on tue l'arbre avec taskkill à la place.
     const child = spawn(command, {
       cwd: root,
       shell: true,
-      detached: true,
+      detached: !IS_WINDOWS,
+      windowsHide: true,
       env: process.env,
     });
 
@@ -273,6 +288,11 @@ app.post('/api/run', async (req, res) => {
     child.stderr.on('data', (chunk) => { stderr = collect(stderr, chunk); });
 
     const killGroup = (signal) => {
+      if (IS_WINDOWS) {
+        spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true })
+          .on('error', () => { /* déjà terminé */ });
+        return;
+      }
       try { process.kill(-child.pid, signal); } catch { /* déjà terminé */ }
     };
 
@@ -321,6 +341,6 @@ app.post('/api/generate/effective-key', (req, res) => {
   res.json({ hasGroqKey: Boolean(process.env.GROQ_API_KEY) });
 });
 
-app.listen(PORT, () => {
-  console.log(`Groq Nav démarré sur http://localhost:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`Groq Nav démarré sur http://localhost:${PORT} (écoute sur ${HOST})`);
 });

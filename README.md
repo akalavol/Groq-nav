@@ -14,6 +14,28 @@ et à `git`.
 
 ## Installation
 
+### Windows (automatique)
+
+Double-clique sur **`install.cmd`**. Le script :
+
+1. installe Node.js LTS (qui fournit `npm`) via `winget` s'il est absent ou
+   plus vieux que la v18 — c'est la cause de l'erreur
+   « npm n'est pas reconnu en tant que commande interne » ;
+2. installe Git s'il manque (nécessaire pour la section git) ;
+3. lance `npm ci` pour installer les dépendances ;
+4. crée `.env` depuis `.env.example` s'il n'existe pas ;
+5. vérifie le code (`npm run check`).
+
+Ensuite, double-clique sur **`start.cmd`** : il démarre le serveur et ouvre
+`http://localhost:3000` dans le navigateur (et lance `install.cmd` tout
+seul si les dépendances manquent).
+
+Si `winget` n'existe pas sur le PC (vieux Windows 10), installe Node.js LTS
+à la main depuis https://nodejs.org, **ferme toutes les consoles**, puis
+relance `install.cmd`.
+
+### Linux / macOS (manuel)
+
 ```bash
 npm install
 cp .env.example .env
